@@ -1,0 +1,219 @@
+create database studentcrud;
+use studentcrud;
+
+CREATE TABLE Student (
+    Id INT PRIMARY KEY IDENTITY,
+    Name NVARCHAR(100),
+    City NVARCHAR(100)
+);
+
+appSettings.json
+{
+    "Logging": {
+        "LogLevel": {
+            "Default": "Information",
+            "Microsoft.AspNetCore": "Warning"
+        }
+    },
+    "AllowedHosts": "*",
+
+  "ConnectionStrings": {
+    "DefaultConnection": "Server=ARTEMIS\\SQLEXPRESS;Database=StudentCrud;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;",
+   // "DefaultConnection": "Server=YOUR_SERVER_NAME\\YOUR_INSTANCE_NAME;Database=YOUR_DATABASE_NAME;User Id=YOUR_USERNAME;Password=YOUR_PASSWORD;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;"
+    // "DefaultConnection": "Server=DHARATHEIMPOSTE\\SQLEXPRESS;Database=studentcrud;Trusted_Connection=True;TrustServerCertificate=True;Encrypt=False;"
+  }
+}
+
+
+Program.cs
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllersWithViews();
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+app.UseRouting();
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Students}/{action=Index}/{id?}");
+
+app.Run();
+
+
+Models -> Student.cs
+namespace aspcrud.Models
+{
+    public class Student
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string City { get; set; }
+    }
+}
+
+
+StudentController.cs
+using aspcrud.Models;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using System.Data;
+
+namespace aspcrud.Controllers
+{
+    public class StudentsController : Controller
+    {
+        private readonly IConfiguration _configuration;
+
+        public StudentsController(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        private string GetConnection()
+        {
+            return _configuration.GetConnectionString("DefaultConnection");
+        }
+
+        // GET: Students
+        public IActionResult Index()
+        {
+            List<Student> students = new();
+            using (SqlConnection con = new(GetConnection()))
+            {
+                con.Open();
+                SqlCommand cmd = new("SELECT * FROM Student", con);
+                SqlDataReader rdr = cmd.ExecuteReader();
+                while (rdr.Read())
+                {
+                    students.Add(new Student
+                    {
+                        Id = (int)rdr["Id"],
+                        Name = rdr["Name"].ToString(),
+                        City = rdr["City"].ToString()
+                    });
+                }
+            }
+            return View(students);
+        }
+
+        // GET: Create or Edit
+        public IActionResult AddOrEdit(int? id)
+        {
+            if (id == null)
+                return View(new Student());
+
+            Student student = new();
+            using (SqlConnection con = new(GetConnection()))
+            {
+                con.Open();
+                SqlCommand cmd = new("SELECT * FROM Student WHERE Id=@Id", con);
+                cmd.Parameters.AddWithValue("@Id", id);
+                SqlDataReader rdr = cmd.ExecuteReader();
+                if (rdr.Read())
+                {
+                    student.Id = (int)rdr["Id"];
+                    student.Name = rdr["Name"].ToString();
+                    student.City = rdr["City"].ToString();
+                }
+            }
+            return View(student);
+        }
+
+        // POST: Create or Edit
+        [HttpPost]
+        public IActionResult AddOrEdit(Student student)
+        {
+            using (SqlConnection con = new(GetConnection()))
+            {
+                con.Open();
+                SqlCommand cmd;
+                if (student.Id == 0)
+                {
+                    cmd = new SqlCommand("INSERT INTO Student (Name, City) VALUES (@Name, @City)", con);
+                }
+                else
+                {
+                    cmd = new SqlCommand("UPDATE Student SET Name=@Name, City=@City WHERE Id=@Id", con);
+                    cmd.Parameters.AddWithValue("@Id", student.Id);
+                }
+                cmd.Parameters.AddWithValue("@Name", student.Name);
+                cmd.Parameters.AddWithValue("@City", student.City);
+                cmd.ExecuteNonQuery();
+            }
+            return RedirectToAction(nameof(Index));
+        }
+
+        // GET: Delete
+        public IActionResult Delete(int id)
+        {
+            using (SqlConnection con = new(GetConnection()))
+            {
+                con.Open();
+                SqlCommand cmd = new("DELETE FROM Student WHERE Id=@Id", con);
+                cmd.Parameters.AddWithValue("@Id", id);
+                cmd.ExecuteNonQuery();
+            }
+            return RedirectToAction(nameof(Index));
+        }
+    }
+}
+
+
+Views->Students->AddorEdit.cshtml
+@model aspcrud.Models.Student
+
+<h2>@(Model.Id == 0 ? "Add Student" : "Edit Student")</h2>
+
+<form asp-action="AddOrEdit" method="post">
+    <input type="hidden" asp-for="Id" />
+    <div class="mb-3">
+        <label asp-for="Name" class="form-label"></label>
+        <input asp-for="Name" class="form-control" />
+    </div>
+    <div class="mb-3">
+        <label asp-for="City" class="form-label"></label>
+        <input asp-for="City" class="form-control" />
+    </div>
+    <button type="submit" class="btn btn-success">Save</button>
+    <a asp-action="Index" class="btn btn-secondary">Back</a>
+</form>
+
+Index.cshtml
+@model IEnumerable<aspcrud.Models.Student>
+
+<h2>Students</h2>
+<a asp-action="AddOrEdit" class="btn btn-primary">Add New</a>
+<table class="table table-bordered mt-3">
+    <thead>
+        <tr>
+            <th>Id</th>
+            <th>Name</th>
+            <th>City</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var s in Model)
+        {
+            <tr>
+                <td>@s.Id</td>
+                <td>@s.Name</td>
+                <td>@s.City</td>
+                <td>
+                    <a asp-action="AddOrEdit" asp-route-id="@s.Id" class="btn btn-sm btn-warning">Edit</a>
+                    <a asp-action="Delete" asp-route-id="@s.Id" class="btn btn-sm btn-danger">Delete</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
